@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WifiTethering
 import androidx.compose.material3.Button
@@ -39,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.datameter.domain.ByteFormatter
-import com.datameter.domain.model.AuditHomeStatus
-import com.datameter.domain.model.AuditTone
 import com.datameter.domain.model.DataFreshness
 import com.datameter.domain.model.HomeViewState
 import com.datameter.domain.model.PermissionStatus
@@ -64,20 +65,30 @@ import com.datameter.domain.model.UsageRow
 import com.datameter.domain.model.UsageRowKind
 import com.datameter.ui.components.UsageBar
 import com.datameter.ui.components.UsageSparkline
+import com.datameter.ui.control.DataControlUiState
+import com.datameter.data.control.DataControlRunStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+
+private val appIconCache = ConcurrentHashMap<String, ImageBitmap>()
 
 @Composable
 fun HomeScreen(
     state: HomeViewState,
+    dataControlState: DataControlUiState,
     onPeriodSelected: (UsagePeriod) -> Unit,
     onOpenUsageAccess: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onOpenTimeline: () -> Unit,
-    onOpenAudit: () -> Unit,
     onRefresh: () -> Unit,
+    onEnableDataControl: () -> Unit,
+    onDisableDataControl: () -> Unit,
+    onUsageRowSelected: (UsageRow) -> Unit,
 ) {
     if (state.permissionStatus == PermissionStatus.Missing) {
         PermissionRequiredContent(
@@ -89,8 +100,8 @@ fun HomeScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 14.dp, 20.dp, 22.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(20.dp, 20.dp, 20.dp, 30.dp),
+        verticalArrangement = Arrangement.spacedBy(34.dp),
     ) {
         if (state.isLoading) {
             item {
@@ -110,20 +121,28 @@ fun HomeScreen(
         }
 
         item {
-            UsageBreakdownSection(rows = state.usageRows)
+            DataControlHomeSection(
+                state = dataControlState,
+                onEnableDataControl = onEnableDataControl,
+                onDisableDataControl = onDisableDataControl,
+            )
+        }
+
+        item {
+            UsageBreakdownSection(
+                rows = state.usageRows,
+                period = state.selectedPeriod,
+                periodElapsedMillis = state.periodElapsedMillis,
+                onUsageRowSelected = onUsageRowSelected,
+            )
         }
 
         item {
             TimelinePreviewSection(
                 buckets = state.timelineBuckets,
+                period = state.selectedPeriod,
+                periodElapsedMillis = state.periodElapsedMillis,
                 onOpenTimeline = onOpenTimeline,
-            )
-        }
-
-        item {
-            AuditEntrySection(
-                status = state.auditStatus,
-                onOpenAudit = onOpenAudit,
             )
         }
 
@@ -154,8 +173,8 @@ fun TimelineScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 14.dp, 20.dp, 22.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(20.dp, 20.dp, 20.dp, 30.dp),
+        verticalArrangement = Arrangement.spacedBy(30.dp),
     ) {
         item {
             SectionHeader(
@@ -179,7 +198,10 @@ fun TimelineScreen(
                     UsageSparkline(buckets = state.timelineBuckets)
                     Text(
                         text = if (state.timelineBuckets.isEmpty()) {
-                            "No usage measured in this period."
+                            emptyTimelineMessage(
+                                period = state.selectedPeriod,
+                                periodElapsedMillis = state.periodElapsedMillis,
+                            )
                         } else {
                             "Biggest movement: ${formatBucketLabel(spikes.first())}"
                         },
@@ -193,44 +215,6 @@ fun TimelineScreen(
         if (spikes.isNotEmpty()) {
             item {
                 GroupedTimelineList(buckets = spikes)
-            }
-        }
-    }
-}
-
-@Composable
-fun AppsScreen(
-    state: HomeViewState,
-    onOpenUsageAccess: () -> Unit,
-    onOpenAppSettings: () -> Unit,
-) {
-    if (state.permissionStatus == PermissionStatus.Missing) {
-        PermissionRequiredContent(
-            onOpenUsageAccess = onOpenUsageAccess,
-            onOpenAppSettings = onOpenAppSettings,
-        )
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 14.dp, 20.dp, 22.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            SectionHeader(
-                title = "Who used it",
-                subtitle = "${state.selectedPeriod.label} - ${state.selectedNetworkFilter.label}",
-            )
-        }
-
-        if (state.usageRows.isEmpty()) {
-            item {
-                EmptyUsagePanel("No app usage identified in this period.")
-            }
-        } else {
-            item {
-                GroupedUsageList(rows = state.usageRows)
             }
         }
     }
@@ -335,7 +319,7 @@ private fun PrimaryMeterSection(
     state: HomeViewState,
     onPeriodSelected: (UsagePeriod) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Column {
             Text(
                 text = state.selectedPeriod.label,
@@ -365,6 +349,9 @@ private fun PrimaryMeterSection(
                 PeriodSummaryChip(
                     summary = summary,
                     selected = summary.period == state.selectedPeriod,
+                    loading = state.isLoading &&
+                        summary.period != state.selectedPeriod &&
+                        summary.totalBytes == 0L,
                     onSelected = { onPeriodSelected(summary.period) },
                     modifier = Modifier.weight(1f),
                 )
@@ -377,6 +364,7 @@ private fun PrimaryMeterSection(
 private fun PeriodSummaryChip(
     summary: PeriodSummary,
     selected: Boolean,
+    loading: Boolean,
     onSelected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -410,51 +398,200 @@ private fun PeriodSummaryChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = ByteFormatter.format(summary.totalBytes),
-                style = MaterialTheme.typography.bodySmall,
-                color = contentColor.copy(alpha = 0.76f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (loading) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 5.dp)
+                        .width(44.dp)
+                        .height(8.dp)
+                        .clip(MaterialTheme.shapes.small)
+                        .background(contentColor.copy(alpha = 0.18f)),
+                )
+            } else {
+                Text(
+                    text = ByteFormatter.format(summary.totalBytes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor.copy(alpha = 0.76f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun InsightSection(insight: String) {
+    val shape = MaterialTheme.shapes.medium
+    val alertColor = MaterialTheme.colorScheme.tertiary
+
     Surface(
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = datameterPanelShape(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp),
+        color = alertColor.copy(alpha = 0.08f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = shape,
     ) {
-        Text(
-            text = insight,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = alertColor.copy(alpha = 0.72f),
+            )
+            Text(
+                text = insight,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+            )
+        }
     }
 }
 
 @Composable
-private fun UsageBreakdownSection(rows: List<UsageRow>) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun UsageBreakdownSection(
+    rows: List<UsageRow>,
+    period: UsagePeriod,
+    periodElapsedMillis: Long,
+    onUsageRowSelected: (UsageRow) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionHeader(
             title = "Where it went",
             subtitle = null,
         )
 
         if (rows.isEmpty()) {
-            EmptyUsagePanel("No app usage identified in this period.")
+            EmptyUsagePanel(
+                emptyBreakdownMessage(
+                    period = period,
+                    periodElapsedMillis = periodElapsedMillis,
+                ),
+            )
         } else {
-            GroupedUsageList(rows = rows)
+            GroupedUsageList(
+                rows = rows,
+                onUsageRowSelected = onUsageRowSelected,
+            )
         }
     }
 }
 
 @Composable
-private fun GroupedUsageList(rows: List<UsageRow>) {
+private fun DataControlHomeSection(
+    state: DataControlUiState,
+    onEnableDataControl: () -> Unit,
+    onDisableDataControl: () -> Unit,
+) {
+    val title = when (state.runtimeState.status) {
+        DataControlRunStatus.Active -> "Data Control active"
+        DataControlRunStatus.Standby -> "Data Control ready"
+        DataControlRunStatus.Starting -> "Data Control starting"
+        DataControlRunStatus.NeedsVpnPermission -> "VPN permission needed"
+        DataControlRunStatus.Error -> "Data Control needs attention"
+        DataControlRunStatus.Off -> "Data Control off"
+    }
+    val subtitle = when (state.runtimeState.status) {
+        DataControlRunStatus.Active -> {
+            if (state.blockedAppsToday > 0) {
+                "${state.blockedAppsToday} apps blocked today"
+            } else {
+                "Tap any app below to control mobile or Wi-Fi access."
+            }
+        }
+
+        DataControlRunStatus.Starting -> "Preparing local app rules."
+        DataControlRunStatus.Standby -> {
+            if (state.activeRuleCount > 0 || state.settings.globalAutoBlockEnabled) {
+                "Your rules are saved. The VPN starts only for apps Datameter controls."
+            } else {
+                "Tap an app below to set rules, or turn on app auto-block in Alerts."
+            }
+        }
+
+        DataControlRunStatus.NeedsVpnPermission -> "Android needs one more confirmation."
+        DataControlRunStatus.Error -> state.runtimeState.message ?: "Could not keep app controls running."
+        DataControlRunStatus.Off -> {
+            if (state.activeRuleCount > 0 || state.settings.globalAutoBlockEnabled) {
+                "Your rules are saved. Turn it on to apply them."
+            } else {
+                "Tap an app below to set rules, then turn Data Control on."
+            }
+        }
+    }
+    val active = state.runtimeState.status == DataControlRunStatus.Active
+    val enabled = state.settings.enabled
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = datameterPanelShape(),
+        color = if (active) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.64f)
+        } else {
+            datameterPanelColor()
+        },
+        contentColor = if (active) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Security,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (enabled) {
+                OutlinedButton(
+                    onClick = onDisableDataControl,
+                    shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text("Off", style = MaterialTheme.typography.labelMedium)
+                }
+            } else {
+                Button(
+                    onClick = onEnableDataControl,
+                    shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text("Turn on", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupedUsageList(
+    rows: List<UsageRow>,
+    onUsageRowSelected: (UsageRow) -> Unit,
+) {
     val maxBytes = rows.maxOfOrNull { it.totalBytes }.coerceAtLeastOne()
 
     Column(
@@ -466,6 +603,7 @@ private fun GroupedUsageList(rows: List<UsageRow>) {
                 row = row,
                 maxBytes = maxBytes,
                 shape = groupedItemShape(index, rows.size),
+                onClick = { onUsageRowSelected(row) },
             )
         }
     }
@@ -476,9 +614,17 @@ private fun UsageRowItem(
     row: UsageRow,
     maxBytes: Long,
     shape: RoundedCornerShape,
+    onClick: () -> Unit,
 ) {
     val color = usageKindColor(row.kind)
+    val opensDetail = row.kind == UsageRowKind.App && row.uid != null && row.packageNameOrNull() != null
     Surface(
+        modifier = Modifier
+            .clip(shape)
+            .clickable(
+                enabled = opensDetail,
+                onClick = onClick,
+            ),
         shape = shape,
         color = datameterListItemColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -520,6 +666,8 @@ private fun UsageRowItem(
 @Composable
 private fun TimelinePreviewSection(
     buckets: List<TimelineBucket>,
+    period: UsagePeriod,
+    periodElapsedMillis: Long,
     onOpenTimeline: () -> Unit,
 ) {
     val spike = remember(buckets) { buckets.maxByOrNull { it.totalBytes } }
@@ -544,7 +692,10 @@ private fun TimelinePreviewSection(
                     )
                     Text(
                         text = if (spike == null) {
-                            "No timeline movement yet."
+                            emptyTimelineMessage(
+                                period = period,
+                                periodElapsedMillis = periodElapsedMillis,
+                            )
                         } else {
                             "Biggest spike: ${formatBucketLabel(spike)}"
                         },
@@ -563,73 +714,6 @@ private fun TimelinePreviewSection(
                 }
             }
             UsageSparkline(buckets = buckets)
-        }
-    }
-}
-
-@Composable
-private fun AuditEntrySection(
-    status: AuditHomeStatus,
-    onOpenAudit: () -> Unit,
-) {
-    val containerColor = when (status) {
-        AuditHomeStatus.Inactive -> datameterPanelColor()
-        is AuditHomeStatus.Active -> when (status.assessment.tone) {
-            AuditTone.UnusualDifference -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.74f)
-
-            AuditTone.LooksNormal -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f)
-
-            AuditTone.Waiting -> datameterPanelColor()
-        }
-    }
-
-    Surface(
-        shape = datameterPanelShape(),
-        color = containerColor,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Check my network",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = when (status) {
-                            AuditHomeStatus.Inactive -> "Start a measured balance check."
-                            is AuditHomeStatus.Active -> "${status.networkName} audit - ${status.assessment.label}"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                OutlinedButton(
-                    onClick = onOpenAudit,
-                    shape = MaterialTheme.shapes.medium,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text(
-                        text = "Open",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-            }
-
-            if (status is AuditHomeStatus.Active) {
-                AuditMetricRow("Device measured", ByteFormatter.format(status.measuredBytes))
-                status.deductedBytes?.let { AuditMetricRow("Network deducted", ByteFormatter.format(it)) }
-                status.differenceBytes?.let { AuditMetricRow("Difference", ByteFormatter.formatSigned(it)) }
-            }
         }
     }
 }
@@ -744,8 +828,12 @@ private fun EmptyUsagePanel(message: String) {
 private fun SectionHeader(
     title: String,
     subtitle: String?,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -759,26 +847,6 @@ private fun SectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-    }
-}
-
-@Composable
-private fun AuditMetricRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 
@@ -815,6 +883,32 @@ private fun groupedItemShape(index: Int, totalItems: Int): RoundedCornerShape {
     }
 }
 
+private fun emptyBreakdownMessage(
+    period: UsagePeriod,
+    periodElapsedMillis: Long,
+): String {
+    return if (period.hasJustStarted(periodElapsedMillis)) {
+        "${period.label} just started. App breakdown will appear after a little usage."
+    } else {
+        "App breakdown will appear once Datameter has enough usage for this period."
+    }
+}
+
+private fun emptyTimelineMessage(
+    period: UsagePeriod,
+    periodElapsedMillis: Long,
+): String {
+    return if (period.hasJustStarted(periodElapsedMillis)) {
+        "${period.label} just started. The timeline will fill in after usage begins."
+    } else {
+        "Timeline will appear once Datameter has enough usage for this period."
+    }
+}
+
+private fun UsagePeriod.hasJustStarted(elapsedMillis: Long): Boolean {
+    return elapsedMillis in 0L until EARLY_PERIOD_WINDOW_MILLIS
+}
+
 @Composable
 private fun usageKindColor(kind: UsageRowKind): Color {
     return when (kind) {
@@ -822,6 +916,7 @@ private fun usageKindColor(kind: UsageRowKind): Color {
         UsageRowKind.App -> MaterialTheme.colorScheme.primary
         UsageRowKind.System -> MaterialTheme.colorScheme.secondary
         UsageRowKind.RemovedApps -> MaterialTheme.colorScheme.outline
+        UsageRowKind.Measured -> MaterialTheme.colorScheme.primary
     }
 }
 
@@ -861,11 +956,22 @@ private fun UsageSourceIcon(row: UsageRow, color: Color) {
 private fun rememberAppIcon(row: UsageRow): ImageBitmap? {
     if (row.kind != UsageRowKind.App) return null
 
-    val context = LocalContext.current
-    return remember(row.id) {
-        val packageName = row.packageNameOrNull() ?: return@remember null
-        context.loadAppIcon(packageName)
+    val context = LocalContext.current.applicationContext
+    val packageName = remember(row.id) { row.packageNameOrNull() } ?: return null
+    val iconState = produceState<ImageBitmap?>(
+        initialValue = appIconCache[packageName],
+        packageName,
+        context,
+    ) {
+        if (value != null) return@produceState
+        value = withContext(Dispatchers.IO) {
+            context.loadAppIcon(packageName)
+        }?.also { icon ->
+            appIconCache[packageName] = icon
+        }
     }
+
+    return iconState.value
 }
 
 private fun usageVector(kind: UsageRowKind): ImageVector {
@@ -873,6 +979,7 @@ private fun usageVector(kind: UsageRowKind): ImageVector {
         UsageRowKind.Hotspot -> Icons.Filled.WifiTethering
         UsageRowKind.System -> Icons.Filled.Settings
         UsageRowKind.RemovedApps -> Icons.Filled.Delete
+        UsageRowKind.Measured -> Icons.Filled.Apps
         UsageRowKind.App -> Icons.Filled.Apps
     }
 }
@@ -917,3 +1024,4 @@ private fun Long?.coerceAtLeastOne(): Long {
 
 private const val APP_ROW_PREFIX = "app:"
 private const val ICON_BITMAP_SIZE_PX = 96
+private const val EARLY_PERIOD_WINDOW_MILLIS = 60L * 60L * 1000L

@@ -1,7 +1,5 @@
 package com.datameter.domain
 
-import com.datameter.data.audit.AuditRepository
-import com.datameter.data.audit.AuditSession
 import com.datameter.data.usage.NetworkUsageDataSource
 import com.datameter.data.usage.UsageAccessChecker
 import com.datameter.domain.model.ByteCount
@@ -26,7 +24,6 @@ class DefaultHomeUsageRepositoryTest {
         val repository = DefaultHomeUsageRepository(
             usageAccessManager = FakeUsageAccessChecker(hasAccess = false),
             usageDataSource = FakeUsageDataSource(),
-            auditRepository = FakeAuditRepository(),
             clock = { FIXED_NOW },
         )
 
@@ -64,7 +61,6 @@ class DefaultHomeUsageRepositoryTest {
                     ),
                 ),
             ),
-            auditRepository = FakeAuditRepository(),
             clock = { FIXED_NOW },
         )
 
@@ -74,6 +70,86 @@ class DefaultHomeUsageRepositoryTest {
         assertEquals(NetworkFilter.Mobile, state.selectedNetworkFilter)
         assertEquals(1_000L, state.totalBytes)
         assertEquals("YouTube", state.usageRows.first().label)
+    }
+
+    @Test
+    fun `measured total is shown even when app rows are missing`() = runTest {
+        val repository = DefaultHomeUsageRepository(
+            usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
+            usageDataSource = FakeUsageDataSource(
+                snapshot = UsageSnapshot(
+                    total = ByteCount(rxBytes = 3_700_000_000L, txBytes = 0L),
+                    rows = emptyList(),
+                    timelineBuckets = emptyList(),
+                ),
+            ),
+            clock = { FIXED_NOW },
+        )
+
+        val state = repository.loadPrimaryHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
+
+        assertEquals(1, state.usageRows.size)
+        assertEquals("Measured mobile data", state.usageRows.single().label)
+        assertEquals(UsageRowKind.Measured, state.usageRows.single().kind)
+        assertEquals(3_700_000_000L, state.usageRows.single().totalBytes)
+    }
+
+    @Test
+    fun `unassigned measured remainder is added to partial app rows`() = runTest {
+        val repository = DefaultHomeUsageRepository(
+            usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
+            usageDataSource = FakeUsageDataSource(
+                snapshot = UsageSnapshot(
+                    total = ByteCount(rxBytes = 1_000L, txBytes = 0L),
+                    rows = listOf(
+                        UsageRow(
+                            id = "app:youtube",
+                            label = "YouTube",
+                            kind = UsageRowKind.App,
+                            rxBytes = 700L,
+                            txBytes = 0L,
+                        ),
+                    ),
+                    timelineBuckets = emptyList(),
+                ),
+            ),
+            clock = { FIXED_NOW },
+        )
+
+        val state = repository.loadPrimaryHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
+
+        assertEquals(2, state.usageRows.size)
+        assertEquals(1_000L, state.usageRows.sumOf { it.totalBytes })
+        assertEquals("Measured mobile data", state.usageRows.last().label)
+        assertEquals(300L, state.usageRows.last().totalBytes)
+    }
+
+    @Test
+    fun `primary home state only queries selected period`() = runTest {
+        val usageDataSource = FakeUsageDataSource()
+        val repository = DefaultHomeUsageRepository(
+            usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
+            usageDataSource = usageDataSource,
+            clock = { FIXED_NOW },
+        )
+
+        repository.loadPrimaryHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
+
+        assertEquals(1, usageDataSource.queryCount)
+    }
+
+    @Test
+    fun `full home state reuses selected period total for summaries`() = runTest {
+        val usageDataSource = FakeUsageDataSource()
+        val repository = DefaultHomeUsageRepository(
+            usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
+            usageDataSource = usageDataSource,
+            clock = { FIXED_NOW },
+        )
+
+        repository.loadHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
+
+        assertEquals(UsagePeriod.entries.size, usageDataSource.queryCount)
     }
 
     private class FakeUsageAccessChecker(
@@ -89,22 +165,13 @@ class DefaultHomeUsageRepositoryTest {
             timelineBuckets = emptyList(),
         ),
     ) : NetworkUsageDataSource {
-        override suspend fun query(filter: NetworkFilter, range: DateRange): UsageSnapshot = snapshot
-    }
+        var queryCount = 0
+            private set
 
-    private class FakeAuditRepository : AuditRepository {
-        override fun currentSession(): AuditSession? = null
-
-        override fun startSession(
-            networkName: String,
-            startingBalanceBytes: Long,
-            startingDeviceMeterBytes: Long,
-            startedAtMillis: Long,
-        ) = Unit
-
-        override fun recordBalance(balanceBytes: Long, checkedAtMillis: Long) = Unit
-
-        override fun clearSession() = Unit
+        override suspend fun query(filter: NetworkFilter, range: DateRange): UsageSnapshot {
+            queryCount += 1
+            return snapshot
+        }
     }
 
     private companion object {

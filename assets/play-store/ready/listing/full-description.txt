@@ -1,0 +1,16 @@
+Datameter helps you understand where your mobile data goes.
+
+See your mobile data, Wi-Fi, hotspot, and per-app usage in one clear dashboard. Compare what your phone measured with what your network deducted, set usage alerts, control app data access, and spot unusual data movement before it becomes expensive.
+
+Key features:
+
+Track mobile data and Wi-Fi usage by period.
+See app-by-app usage breakdowns.
+Monitor hotspot and tethering consumption.
+Audit your network balance against measured usage.
+Get local usage alerts for daily limits and hourly spikes.
+Optionally block mobile data or Wi-Fi for individual apps.
+Optionally auto-block apps after they reach a data limit.
+Review usage movement across the day, week, or month.
+
+Datameter is built for clarity. It uses Android Usage Access and network statistics on your device to show data usage. Optional Data Control uses Android VPN Service locally to measure and block app traffic based on rules you choose. Datameter does not require an account and does not upload your usage details to a server.

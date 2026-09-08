@@ -11,6 +11,7 @@ import com.datameter.domain.HomeUsageRepository
 import com.datameter.domain.model.DataFreshness
 import com.datameter.domain.model.HomeViewState
 import com.datameter.domain.model.NetworkFilter
+import com.datameter.domain.model.PeriodSummary
 import com.datameter.domain.model.PermissionStatus
 import com.datameter.domain.model.UsagePeriod
 import kotlinx.coroutines.Job
@@ -50,18 +51,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         refreshJob?.cancel()
+        val networkFilter = selectedNetworkFilter
+        val period = selectedPeriod
+        val previousState = _uiState.value
         refreshJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
-                selectedNetworkFilter = selectedNetworkFilter,
-                selectedPeriod = selectedPeriod,
+                selectedNetworkFilter = networkFilter,
+                selectedPeriod = period,
                 isLoading = true,
                 dataFreshness = DataFreshness.Loading,
             )
 
-            _uiState.value = runCatching {
-                repository.loadHomeState(selectedNetworkFilter, selectedPeriod)
+            val primaryState = runCatching {
+                repository.loadPrimaryHomeState(networkFilter, period)
             }.getOrElse { throwable ->
-                HomeViewState.initial(selectedNetworkFilter, selectedPeriod).copy(
+                HomeViewState.initial(networkFilter, period).copy(
                     isLoading = false,
                     permissionStatus = if (usageAccessManager.hasUsageAccess()) {
                         PermissionStatus.Granted
@@ -73,6 +77,65 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     ),
                     primaryInsight = "Datameter could not read usage yet.",
                 )
+            }
+
+            if (networkFilter != selectedNetworkFilter || period != selectedPeriod) return@launch
+            if (
+                primaryState.permissionStatus != PermissionStatus.Granted ||
+                primaryState.dataFreshness is DataFreshness.Error
+            ) {
+                _uiState.value = primaryState
+                return@launch
+            }
+
+            _uiState.value = primaryState.copy(
+                periodSummaries = primaryState.periodSummaries.withCarriedOverTotals(
+                    previousSummaries = previousState.periodSummaries.takeIf {
+                        previousState.selectedNetworkFilter == networkFilter
+                    }.orEmpty(),
+                    selectedPeriod = period,
+                    selectedPeriodTotalBytes = primaryState.totalBytes,
+                ),
+                isLoading = true,
+                dataFreshness = DataFreshness.Loading,
+            )
+
+            val summaries = runCatching {
+                repository.loadPeriodSummaries(
+                    networkFilter = networkFilter,
+                    selectedPeriod = period,
+                    selectedPeriodTotalBytes = primaryState.totalBytes,
+                )
+            }.getOrElse { throwable ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    dataFreshness = DataFreshness.Error(
+                        throwable.message ?: "Datameter could not update summaries yet.",
+                    ),
+                )
+                return@launch
+            }
+
+            if (networkFilter != selectedNetworkFilter || period != selectedPeriod) return@launch
+            _uiState.value = _uiState.value.copy(
+                periodSummaries = summaries,
+                isLoading = false,
+                dataFreshness = primaryState.dataFreshness,
+            )
+        }
+    }
+
+    private fun List<PeriodSummary>.withCarriedOverTotals(
+        previousSummaries: List<PeriodSummary>,
+        selectedPeriod: UsagePeriod,
+        selectedPeriodTotalBytes: Long,
+    ): List<PeriodSummary> {
+        val previousByPeriod = previousSummaries.associateBy { it.period }
+        return map { summary ->
+            when {
+                summary.period == selectedPeriod -> summary.copy(totalBytes = selectedPeriodTotalBytes)
+                previousByPeriod.containsKey(summary.period) -> previousByPeriod.getValue(summary.period)
+                else -> summary
             }
         }
     }

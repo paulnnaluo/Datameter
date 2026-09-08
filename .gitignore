@@ -1,4 +1,9 @@
 .gradle/
+.gradle-workspace/
+gradle/gradle-daemon-jvm.properties
+keystore.properties
+*.jks
+*.keystore
 .idea/
 *.iml
 build/

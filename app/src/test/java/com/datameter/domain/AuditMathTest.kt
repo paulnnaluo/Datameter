@@ -14,7 +14,7 @@ class AuditMathTest {
         )
 
         assertEquals(AuditTone.LooksNormal, assessment.tone)
-        assertEquals("Looks normal", assessment.label)
+        assertEquals("Deduction matches what you used", assessment.label)
     }
 
     @Test
@@ -25,7 +25,7 @@ class AuditMathTest {
         )
 
         assertEquals(AuditTone.UnusualDifference, assessment.tone)
-        assertEquals("Unusual difference", assessment.label)
+        assertEquals("Network deducted more than you used", assessment.label)
     }
 
     @Test
@@ -36,6 +36,6 @@ class AuditMathTest {
         )
 
         assertEquals(AuditTone.Waiting, assessment.tone)
-        assertEquals("Measuring", assessment.label)
+        assertEquals("Enter latest balance to compare", assessment.label)
     }
 }

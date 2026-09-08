@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import java.util.concurrent.ConcurrentHashMap
 
 data class AppIdentity(
     val id: String,
@@ -12,8 +13,32 @@ data class AppIdentity(
 
 class PackageLabelResolver(context: Context) {
     private val packageManager = context.applicationContext.packageManager
+    private val identityCache = ConcurrentHashMap<Int, AppIdentity>()
 
-    fun resolve(uid: Int): AppIdentity {
+    fun resolve(uid: Int, usageStatIdentities: List<AppIdentity> = emptyList()): AppIdentity {
+        if (usageStatIdentities.isNotEmpty()) {
+            return identityFromUsageStats(usageStatIdentities)
+        }
+
+        return identityCache.getOrPut(uid) {
+            resolveUncached(uid)
+        }
+    }
+
+    private fun identityFromUsageStats(identities: List<AppIdentity>): AppIdentity {
+        val distinctIdentities = identities.distinctBy { it.id }
+        val first = distinctIdentities.first()
+        return AppIdentity(
+            id = first.id,
+            label = if (distinctIdentities.size <= 1) {
+                first.label
+            } else {
+                "${first.label} + ${distinctIdentities.size - 1}"
+            },
+        )
+    }
+
+    private fun resolveUncached(uid: Int): AppIdentity {
         val packages = packageNamesForUid(uid)
         val labels = packages.mapNotNull { packageName ->
             applicationLabel(packageName)
@@ -22,7 +47,7 @@ class PackageLabelResolver(context: Context) {
         val label = when {
             labels.isNotEmpty() -> labels.first()
             packages.isNotEmpty() -> packages.first().toReadablePackageLabel()
-            else -> "App UID $uid"
+            else -> "Unidentified app"
         }
         val finalLabel = when {
             labels.size <= 1 -> label

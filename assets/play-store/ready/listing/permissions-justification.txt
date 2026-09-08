@@ -1,0 +1,23 @@
+PACKAGE_USAGE_STATS
+Datameter needs Usage Access to read Android network usage history and show mobile data, Wi-Fi, hotspot, and per-app usage to the user.
+
+QUERY_ALL_PACKAGES
+Datameter's optional Data Control feature is a local app firewall. It lets users select any installed app, block mobile/Wi-Fi data for that app, and auto-block apps after a data limit. Broad package visibility is needed to identify all installed apps and show accurate app names/icons for firewall rules. Used locally only.
+
+Android VPN Service
+Datameter uses Android VPN Service only when the user turns on Data Control. The VPN runs locally on the device to measure and block app traffic based on user rules. Traffic is not sent to Datameter servers.
+
+INTERNET
+Data Control needs Internet permission to forward allowed app traffic to the destination requested by the app while the local VPN is active. Datameter does not upload usage details to developer servers.
+
+ACCESS_NETWORK_STATE
+Data Control needs network-state access to tell mobile data from Wi-Fi and keep the local VPN stable when the phone switches networks.
+
+POST_NOTIFICATIONS
+Datameter uses notifications for optional local usage alerts, daily limit warnings, hourly spike alerts, Data Control block alerts, and the persistent Data Control VPN status notification.
+
+RECEIVE_BOOT_COMPLETED
+Datameter reschedules enabled local usage alerts and restarts Data Control when the user previously left it enabled.
+
+Data handling
+Usage data, installed app information, Data Control rules, and block events are processed locally on device. Datameter does not require an account and does not upload this data to Datameter servers.

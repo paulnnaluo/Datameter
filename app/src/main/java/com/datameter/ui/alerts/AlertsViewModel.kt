@@ -7,13 +7,15 @@ import androidx.lifecycle.ViewModelProvider
 import com.datameter.core.DatameterServiceLocator
 import com.datameter.data.alerts.AlertSettings
 import com.datameter.data.alerts.AlertSettingsRepository
+import com.datameter.data.alerts.UsageAlertScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class AlertsViewModel(application: Application) : AndroidViewModel(application) {
+    private val appContext = application.applicationContext
     private val repository: AlertSettingsRepository =
-        DatameterServiceLocator.alertSettingsRepository(application)
+        DatameterServiceLocator.alertSettingsRepository(appContext)
 
     private val _uiState = MutableStateFlow(repository.read())
     val uiState: StateFlow<AlertSettings> = _uiState.asStateFlow()
@@ -37,6 +39,7 @@ class AlertsViewModel(application: Application) : AndroidViewModel(application) 
     private fun update(block: (AlertSettings) -> AlertSettings) {
         val next = block(_uiState.value)
         repository.save(next)
+        UsageAlertScheduler.sync(appContext)
         _uiState.value = next
     }
 

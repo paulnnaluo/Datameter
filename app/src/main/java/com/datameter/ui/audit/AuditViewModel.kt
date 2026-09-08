@@ -21,16 +21,25 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class CompletedAuditResult(
+    val networkName: String,
+    val startedAtMillis: Long,
+    val endedAtMillis: Long,
+    val startingBalanceBytes: Long,
+    val endingBalanceBytes: Long,
+    val measuredBytes: Long,
+    val deductedBytes: Long,
+    val differenceBytes: Long,
+    val assessment: AuditAssessment,
+)
+
 data class AuditUiState(
     val permissionStatus: PermissionStatus = PermissionStatus.Unknown,
     val networkNameInput: String = "MTN",
     val startingBalanceInput: String = "",
     val currentBalanceInput: String = "",
     val activeSession: AuditSession? = null,
-    val measuredBytes: Long = 0L,
-    val deductedBytes: Long? = null,
-    val differenceBytes: Long? = null,
-    val assessment: AuditAssessment = AuditMath.assess(0L, null),
+    val completedAudit: CompletedAuditResult? = null,
     val isBusy: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -107,12 +116,13 @@ class AuditViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 startingBalanceInput = "",
                 currentBalanceInput = "",
+                completedAudit = null,
             )
             loadState()
         }
     }
 
-    fun recordCheck() {
+    fun endAudit() {
         viewModelScope.launch {
             val session = auditRepository.currentSession()
             if (session == null) {
@@ -120,37 +130,60 @@ class AuditViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val currentBalance = BalanceInputParser.parseGigabytes(
-                _uiState.value.currentBalanceInput,
-            )
-            if (currentBalance == null) {
-                _uiState.value = _uiState.value.copy(errorMessage = "Enter the current balance in GB.")
+            val enteredBalance = _uiState.value.currentBalanceInput.trim()
+            val typedEndingBalance = if (enteredBalance.isBlank()) {
+                null
+            } else {
+                BalanceInputParser.parseGigabytes(enteredBalance)
+            }
+            if (enteredBalance.isNotBlank() && typedEndingBalance == null) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Enter the ending data balance in GB.")
                 return@launch
             }
-            if (currentBalance > session.startingBalanceBytes) {
+
+            val endingBalance = typedEndingBalance ?: session.lastBalanceBytes
+            if (endingBalance == null) {
+                _uiState.value = _uiState.value.copy(errorMessage = "Enter the latest data balance before finishing.")
+                return@launch
+            }
+            if (endingBalance > session.startingBalanceBytes) {
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = "Current balance is higher than the starting balance.",
+                    errorMessage = "Ending data balance is higher than the starting data balance.",
                 )
                 return@launch
             }
 
             _uiState.value = _uiState.value.copy(isBusy = true, errorMessage = null)
-            auditRepository.recordBalance(
-                balanceBytes = currentBalance,
-                checkedAtMillis = System.currentTimeMillis(),
+            val endedAtMillis = if (typedEndingBalance == null && session.lastCheckedAtMillis != null) {
+                session.lastCheckedAtMillis
+            } else {
+                System.currentTimeMillis()
+            }
+            val completedAudit = buildCompletedAuditResult(
+                session = session,
+                endingBalanceBytes = endingBalance,
+                endedAtMillis = endedAtMillis,
             )
-            loadState()
+
+            auditRepository.clearSession()
+            _uiState.value = AuditUiState(
+                permissionStatus = if (usageAccessManager.hasUsageAccess()) {
+                    PermissionStatus.Granted
+                } else {
+                    PermissionStatus.Missing
+                },
+                networkNameInput = session.networkName,
+                completedAudit = completedAudit,
+            )
         }
     }
 
-    fun endAudit() {
-        auditRepository.clearSession()
-        _uiState.value = AuditUiState(
-            permissionStatus = if (usageAccessManager.hasUsageAccess()) {
-                PermissionStatus.Granted
-            } else {
-                PermissionStatus.Missing
-            },
+    fun clearCompletedAudit() {
+        _uiState.value = _uiState.value.copy(
+            completedAudit = null,
+            currentBalanceInput = "",
+            startingBalanceInput = "",
+            errorMessage = null,
         )
     }
 
@@ -170,36 +203,43 @@ class AuditViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 permissionStatus = PermissionStatus.Granted,
                 activeSession = null,
-                measuredBytes = 0L,
-                deductedBytes = null,
-                differenceBytes = null,
-                assessment = AuditMath.assess(0L, null),
                 isBusy = false,
             )
             return
         }
 
-        val now = System.currentTimeMillis()
-        val measuredBytes = runCatching {
-            usageDataSource.query(
-                NetworkFilter.Mobile,
-                DateRange(session.startedAtMillis, now),
-            ).total.totalBytes
-        }.getOrDefault(0L)
-        val deductedBytes = session.lastBalanceBytes?.let {
-            (session.startingBalanceBytes - it).coerceAtLeast(0L)
-        }
-        val differenceBytes = deductedBytes?.minus(measuredBytes)
-
         _uiState.value = _uiState.value.copy(
             permissionStatus = PermissionStatus.Granted,
             networkNameInput = session.networkName,
             activeSession = session,
+            isBusy = false,
+        )
+    }
+
+    private suspend fun buildCompletedAuditResult(
+        session: AuditSession,
+        endingBalanceBytes: Long,
+        endedAtMillis: Long,
+    ): CompletedAuditResult {
+        val measuredBytes = runCatching {
+            usageDataSource.query(
+                NetworkFilter.Mobile,
+                DateRange(session.startedAtMillis, endedAtMillis),
+            ).total.totalBytes
+        }.getOrDefault(0L)
+        val deductedBytes = (session.startingBalanceBytes - endingBalanceBytes).coerceAtLeast(0L)
+        val differenceBytes = deductedBytes - measuredBytes
+
+        return CompletedAuditResult(
+            networkName = session.networkName,
+            startedAtMillis = session.startedAtMillis,
+            endedAtMillis = endedAtMillis,
+            startingBalanceBytes = session.startingBalanceBytes,
+            endingBalanceBytes = endingBalanceBytes,
             measuredBytes = measuredBytes,
             deductedBytes = deductedBytes,
             differenceBytes = differenceBytes,
             assessment = AuditMath.assess(measuredBytes, deductedBytes),
-            isBusy = false,
         )
     }
 

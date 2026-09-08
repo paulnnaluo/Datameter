@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 class AndroidNetworkUsageDataSource(
     context: Context,
     private val labelResolver: PackageLabelResolver,
+    private val usageStatsPackageResolver: UsageStatsPackageResolver,
 ) : NetworkUsageDataSource {
     private val networkStatsManager = context
         .applicationContext
@@ -25,19 +26,40 @@ class AndroidNetworkUsageDataSource(
 
     override suspend fun query(filter: NetworkFilter, range: DateRange): UsageSnapshot {
         return withContext(Dispatchers.IO) {
+            val usageStatIdentitiesByUid = usageStatsPackageResolver.identitiesByUid(range)
             when (filter) {
-                NetworkFilter.Mobile -> queryNetworkType(ConnectivityManager.TYPE_MOBILE, range)
-                NetworkFilter.Wifi -> queryNetworkType(ConnectivityManager.TYPE_WIFI, range)
+                NetworkFilter.Mobile -> queryNetworkType(
+                    networkType = ConnectivityManager.TYPE_MOBILE,
+                    range = range,
+                    usageStatIdentitiesByUid = usageStatIdentitiesByUid,
+                )
+                NetworkFilter.Wifi -> queryNetworkType(
+                    networkType = ConnectivityManager.TYPE_WIFI,
+                    range = range,
+                    usageStatIdentitiesByUid = usageStatIdentitiesByUid,
+                )
                 NetworkFilter.MobileAndWifi -> combineSnapshots(
-                    queryNetworkType(ConnectivityManager.TYPE_MOBILE, range),
-                    queryNetworkType(ConnectivityManager.TYPE_WIFI, range),
+                    queryNetworkType(
+                        networkType = ConnectivityManager.TYPE_MOBILE,
+                        range = range,
+                        usageStatIdentitiesByUid = usageStatIdentitiesByUid,
+                    ),
+                    queryNetworkType(
+                        networkType = ConnectivityManager.TYPE_WIFI,
+                        range = range,
+                        usageStatIdentitiesByUid = usageStatIdentitiesByUid,
+                    ),
                 )
             }
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun queryNetworkType(networkType: Int, range: DateRange): UsageSnapshot {
+    private fun queryNetworkType(
+        networkType: Int,
+        range: DateRange,
+        usageStatIdentitiesByUid: Map<Int, List<AppIdentity>>,
+    ): UsageSnapshot {
         val total = queryDeviceTotal(networkType, range)
         val rowAccumulator = linkedMapOf<RowKey, MutableByteCount>()
         val bucketAccumulator = linkedMapOf<Long, MutableByteCount>()
@@ -62,7 +84,10 @@ class AndroidNetworkUsageDataSource(
                 val bytes = ByteCount(bucket.rxBytes, bucket.txBytes)
                 if (bytes.totalBytes <= 0L) continue
 
-                val key = rowKeyForUid(bucket.uid)
+                val key = rowKeyForUid(
+                    uid = bucket.uid,
+                    usageStatIdentities = usageStatIdentitiesByUid[bucket.uid].orEmpty(),
+                )
                 rowAccumulator.getOrPut(key) { MutableByteCount() }.add(bytes)
 
                 val timelineStart = floorToHour(bucket.startTimeStamp).coerceAtLeast(range.startMillis)
@@ -79,6 +104,7 @@ class AndroidNetworkUsageDataSource(
                 kind = key.kind,
                 rxBytes = bytes.rxBytes,
                 txBytes = bytes.txBytes,
+                uid = key.uid,
             )
         }.toMutableList()
 
@@ -106,18 +132,20 @@ class AndroidNetworkUsageDataSource(
         }
     }
 
-    private fun rowKeyForUid(uid: Int): RowKey {
+    private fun rowKeyForUid(uid: Int, usageStatIdentities: List<AppIdentity>): RowKey {
         return when {
             uid == NetworkStats.Bucket.UID_TETHERING -> RowKey(
                 id = "hotspot",
                 label = "Hotspot / Tethering",
                 kind = UsageRowKind.Hotspot,
+                uid = null,
             )
 
             uid == NetworkStats.Bucket.UID_REMOVED -> RowKey(
                 id = "removed_apps",
                 label = "Removed apps",
                 kind = UsageRowKind.RemovedApps,
+                uid = null,
             )
 
             uid == NetworkStats.Bucket.UID_ALL ||
@@ -126,14 +154,19 @@ class AndroidNetworkUsageDataSource(
                 id = "system",
                 label = "System",
                 kind = UsageRowKind.System,
+                uid = null,
             )
 
             else -> {
-                val identity = labelResolver.resolve(uid)
+                val identity = labelResolver.resolve(
+                    uid = uid,
+                    usageStatIdentities = usageStatIdentities,
+                )
                 RowKey(
                     id = "app:${identity.id}",
                     label = identity.label,
                     kind = UsageRowKind.App,
+                    uid = uid,
                 )
             }
         }
@@ -198,6 +231,7 @@ class AndroidNetworkUsageDataSource(
         val id: String,
         val label: String,
         val kind: UsageRowKind,
+        val uid: Int?,
     )
 
     private class MutableByteCount(

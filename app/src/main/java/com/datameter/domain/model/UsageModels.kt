@@ -89,6 +89,7 @@ enum class UsageRowKind {
     Hotspot,
     System,
     RemovedApps,
+    Measured,
 }
 
 data class UsageRow(
@@ -97,6 +98,7 @@ data class UsageRow(
     val kind: UsageRowKind,
     val rxBytes: Long,
     val txBytes: Long,
+    val uid: Int? = null,
     val measuredExactly: Boolean = true,
 ) {
     val totalBytes: Long
@@ -106,6 +108,7 @@ data class UsageRow(
         return copy(
             rxBytes = rxBytes.coerceAtLeast(0L) + other.rxBytes.coerceAtLeast(0L),
             txBytes = txBytes.coerceAtLeast(0L) + other.txBytes.coerceAtLeast(0L),
+            uid = uid ?: other.uid,
             measuredExactly = measuredExactly && other.measuredExactly,
         )
     }
@@ -162,7 +165,7 @@ object AuditMath {
 
     fun assess(measuredBytes: Long, deductedBytes: Long?): AuditAssessment {
         if (deductedBytes == null) {
-            return AuditAssessment(AuditTone.Waiting, "Measuring")
+            return AuditAssessment(AuditTone.Waiting, "Enter latest balance to compare")
         }
 
         val baseline = maxOf(measuredBytes, deductedBytes, 1L)
@@ -170,24 +173,13 @@ object AuditMath {
         val difference = deductedBytes - measuredBytes
 
         return if (abs(difference) <= tolerance) {
-            AuditAssessment(AuditTone.LooksNormal, "Looks normal")
+            AuditAssessment(AuditTone.LooksNormal, "Deduction matches what you used")
+        } else if (difference > 0L) {
+            AuditAssessment(AuditTone.UnusualDifference, "Network deducted more than you used")
         } else {
-            AuditAssessment(AuditTone.UnusualDifference, "Unusual difference")
+            AuditAssessment(AuditTone.UnusualDifference, "You used more than network deducted")
         }
     }
-}
-
-sealed interface AuditHomeStatus {
-    data object Inactive : AuditHomeStatus
-
-    data class Active(
-        val networkName: String,
-        val startedAtMillis: Long,
-        val measuredBytes: Long,
-        val deductedBytes: Long?,
-        val differenceBytes: Long?,
-        val assessment: AuditAssessment,
-    ) : AuditHomeStatus
 }
 
 data class HomeViewState(
@@ -198,9 +190,9 @@ data class HomeViewState(
     val usageRows: List<UsageRow>,
     val timelineBuckets: List<TimelineBucket>,
     val primaryInsight: String,
-    val auditStatus: AuditHomeStatus,
     val permissionStatus: PermissionStatus,
     val dataFreshness: DataFreshness,
+    val periodElapsedMillis: Long = Long.MAX_VALUE,
     val isLoading: Boolean = false,
 ) {
     companion object {
@@ -216,9 +208,9 @@ data class HomeViewState(
                 usageRows = emptyList(),
                 timelineBuckets = emptyList(),
                 primaryInsight = "Grant Usage Access to start measuring.",
-                auditStatus = AuditHomeStatus.Inactive,
                 permissionStatus = PermissionStatus.Unknown,
                 dataFreshness = DataFreshness.Loading,
+                periodElapsedMillis = 0L,
                 isLoading = true,
             )
         }

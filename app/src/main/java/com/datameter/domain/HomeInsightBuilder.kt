@@ -11,8 +11,13 @@ object HomeInsightBuilder {
         totalBytes: Long,
         networkFilter: NetworkFilter,
         period: UsagePeriod,
+        periodElapsedMillis: Long = Long.MAX_VALUE,
     ): String {
         if (totalBytes <= 0L) {
+            if (period.hasJustStarted(periodElapsedMillis)) {
+                return "${period.label} just started. Datameter needs a little usage before this becomes useful."
+            }
+
             return "No ${networkFilter.insightLabel} measured ${period.insightLabel}."
         }
 
@@ -23,9 +28,19 @@ object HomeInsightBuilder {
 
         val top = rows.firstOrNull { it.totalBytes > 0L }
         if (top != null) {
+            if (top.kind == UsageRowKind.Measured) {
+                return "Datameter measured ${ByteFormatter.format(top.totalBytes)} of your ${networkFilter.insightLabel} ${period.insightLabel}."
+            }
+
             return "${top.label} used ${ByteFormatter.percent(top.totalBytes, totalBytes)} of your ${networkFilter.insightLabel} ${period.insightLabel}."
         }
 
-        return "Android could not identify the apps behind this usage ${period.insightLabel}."
+        return "Datameter measured ${ByteFormatter.format(totalBytes)} of your ${networkFilter.insightLabel} ${period.insightLabel}."
     }
+
+    private fun UsagePeriod.hasJustStarted(elapsedMillis: Long): Boolean {
+        return elapsedMillis in 0L until EARLY_PERIOD_WINDOW_MILLIS
+    }
+
+    private const val EARLY_PERIOD_WINDOW_MILLIS = 60L * 60L * 1000L
 }
