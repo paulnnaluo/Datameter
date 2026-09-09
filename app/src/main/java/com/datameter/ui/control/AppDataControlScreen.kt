@@ -86,7 +86,7 @@ fun AppDataControlScreen(
         item {
             AppHero(
                 app = state.app,
-                todayBytes = todayUsage?.mobileBytes ?: 0L,
+                todayBytes = state.androidTodayBytes,
             )
         }
 
@@ -458,9 +458,9 @@ private fun UsageProofSection(
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ProofRow("$selectedPeriod measured", ByteFormatter.format(selectedPeriodBytes))
-                ProofRow("Data Control mobile", ByteFormatter.format(todayUsage?.mobileBytes ?: 0L))
-                ProofRow("Data Control Wi-Fi", ByteFormatter.format(todayUsage?.wifiBytes ?: 0L))
+                ProofRow("$selectedPeriod app usage", ByteFormatter.format(selectedPeriodBytes))
+                ProofRow("Routed mobile", ByteFormatter.format(todayUsage?.mobileBytes ?: 0L))
+                ProofRow("Routed Wi-Fi", ByteFormatter.format(todayUsage?.wifiBytes ?: 0L))
             }
         }
     }

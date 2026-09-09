@@ -3,4 +3,4 @@ First Datameter release.
 Track mobile data, Wi-Fi, hotspot, and app usage.
 Audit your network deductions against measured usage.
 Set local alerts for limits and spikes.
-Try optional Data Control to block app data access and auto-block apps after a limit.
+Use Data Control, Datameter's local app firewall for blocking mobile/Wi-Fi data and auto-blocking apps after a limit.

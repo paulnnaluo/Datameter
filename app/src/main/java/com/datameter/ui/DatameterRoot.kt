@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -176,18 +177,14 @@ fun DatameterRoot() {
             var selectedApp by remember { mutableStateOf<SelectedUsageApp?>(null) }
             var showDataControlDisclosure by rememberSaveable { mutableStateOf(false) }
             var showDisableDataControlWarning by rememberSaveable { mutableStateOf(false) }
-            var pendingDataControlAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+            var showDataControlRequired by rememberSaveable { mutableStateOf(false) }
 
             val vpnPermissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartActivityForResult(),
             ) { result ->
                 if (result.resultCode == Activity.RESULT_OK) {
-                    val pendingAction = pendingDataControlAction
-                    pendingDataControlAction = null
-                    pendingAction?.invoke()
                     dataControlViewModel.enableAfterVpnConsent()
                 } else {
-                    pendingDataControlAction = null
                     dataControlViewModel.refresh()
                 }
             }
@@ -197,9 +194,6 @@ fun DatameterRoot() {
                 if (intent != null) {
                     vpnPermissionLauncher.launch(intent)
                 } else {
-                    val pendingAction = pendingDataControlAction
-                    pendingDataControlAction = null
-                    pendingAction?.invoke()
                     dataControlViewModel.enableAfterVpnConsent()
                 }
             }
@@ -216,8 +210,7 @@ fun DatameterRoot() {
                 if (dataControlState.settings.enabled) {
                     action()
                 } else {
-                    pendingDataControlAction = action
-                    requestDataControlStart()
+                    showDataControlRequired = true
                 }
             }
 
@@ -354,8 +347,14 @@ fun DatameterRoot() {
                                     uid = uid,
                                     packageName = packageName,
                                     label = row.label,
+                                    selectedNetworkFilter = homeState.selectedNetworkFilter,
                                     selectedPeriod = homeState.selectedPeriod,
                                     selectedPeriodBytes = row.totalBytes,
+                                    todayBytes = if (homeState.selectedPeriod == UsagePeriod.Today) {
+                                        row.totalBytes
+                                    } else {
+                                        0L
+                                    },
                                 )
                             },
                         )
@@ -410,13 +409,22 @@ fun DatameterRoot() {
             if (showDataControlDisclosure) {
                 DataControlDisclosureDialog(
                     onDismiss = {
-                        pendingDataControlAction = null
                         showDataControlDisclosure = false
                     },
                     onAccept = {
                         showDataControlDisclosure = false
                         dataControlViewModel.acceptDisclosure()
                         startDataControlWithConsent()
+                    },
+                )
+            }
+
+            if (showDataControlRequired) {
+                DataControlRequiredDialog(
+                    onDismiss = { showDataControlRequired = false },
+                    onEnableDataControl = {
+                        showDataControlRequired = false
+                        requestDataControlStart()
                     },
                 )
             }
@@ -515,12 +523,46 @@ private fun Context.startSettingsIntent(intent: Intent, fallbackIntent: Intent? 
 }
 
 @Composable
+private fun DataControlRequiredDialog(
+    onDismiss: () -> Unit,
+    onEnableDataControl: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Text(
+                text = "Turn on Data Control first",
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            Text(
+                text = "App blocks and limits only work while Data Control is on.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            Button(onClick = onEnableDataControl) {
+                Text("Turn on")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not now")
+            }
+        },
+    )
+}
+
+@Composable
 private fun DisableDataControlWarningDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
         title = {
             Text(
                 text = "Turn off Data Control?",
@@ -529,7 +571,7 @@ private fun DisableDataControlWarningDialog(
         },
         text = {
             Text(
-                text = "Your app blocks and auto-block limits will stay saved, but Datameter will stop enforcing them until Data Control is turned on again.",
+                text = "App blocks and limits will stop now. Your rules stay saved.",
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
@@ -559,6 +601,7 @@ private fun DataControlDisclosureDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
         title = {
             Text(
                 text = "Turn on Data Control",

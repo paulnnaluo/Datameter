@@ -37,7 +37,7 @@
             </intent-filter>
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Local Android VPN used for user-enabled app data metering and app-level firewall controls." />
+                android:value="Data Control local app firewall: keeps the user-enabled Android VPN active while Datameter measures and applies app-level data rules." />
         </service>
 
         <receiver

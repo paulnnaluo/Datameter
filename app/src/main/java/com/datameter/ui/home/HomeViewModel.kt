@@ -62,6 +62,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 dataFreshness = DataFreshness.Loading,
             )
 
+            val totalState = runCatching {
+                repository.loadTotalHomeState(networkFilter, period)
+            }.getOrNull()
+
+            if (
+                totalState != null &&
+                networkFilter == selectedNetworkFilter &&
+                period == selectedPeriod
+            ) {
+                _uiState.value = totalState.copy(
+                    periodSummaries = totalState.periodSummaries.withCarriedOverTotals(
+                        previousSummaries = previousState.periodSummaries.takeIf {
+                            previousState.selectedNetworkFilter == networkFilter
+                        }.orEmpty(),
+                        selectedPeriod = period,
+                        selectedPeriodTotalBytes = totalState.totalBytes,
+                    ),
+                )
+            }
+
             val primaryState = runCatching {
                 repository.loadPrimaryHomeState(networkFilter, period)
             }.getOrElse { throwable ->
@@ -90,8 +110,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             _uiState.value = primaryState.copy(
                 periodSummaries = primaryState.periodSummaries.withCarriedOverTotals(
-                    previousSummaries = previousState.periodSummaries.takeIf {
-                        previousState.selectedNetworkFilter == networkFilter
+                    previousSummaries = _uiState.value.periodSummaries.takeIf {
+                        _uiState.value.selectedNetworkFilter == networkFilter
                     }.orEmpty(),
                     selectedPeriod = period,
                     selectedPeriodTotalBytes = primaryState.totalBytes,

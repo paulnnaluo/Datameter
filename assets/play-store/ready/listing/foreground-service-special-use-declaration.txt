@@ -1,0 +1,16 @@
+Special use task:
+Data Control local app firewall.
+
+Task description:
+Datameter uses a special-use foreground service for Data Control, its core user-enabled local app firewall. When Data Control is on, the service keeps Android VPN Service active, shows a persistent notification, measures app traffic locally, and applies the user's app-level mobile/Wi-Fi block and auto-block rules.
+
+Why it must start immediately and cannot be paused or restarted:
+Data Control must start immediately because Android app traffic begins as soon as the user enables the VPN or turns on a data rule. If the task is deferred, Datameter cannot enforce the user's block or auto-block rules, and apps may continue using mobile/Wi-Fi data. The task cannot be safely paused or restarted silently because doing so disconnects the local VPN, interrupts active app traffic, stops live measurement/enforcement, and can temporarily allow blocked apps back online.
+
+Video should show:
+1. Open Datameter and go to an app from the home usage list.
+2. Tap Data Control / Turn on.
+3. Show Datameter's in-app disclosure.
+4. Show Android's VPN permission prompt.
+5. Confirm the persistent "Data Control is active" notification.
+6. Turn on a block or auto-block rule and show Datameter enforcing it.

@@ -30,5 +30,6 @@ interface DataControlRepository {
 
     fun blockedAppsCount(localDate: String): Int
     fun activeRuleCount(): Int
+    fun activeControlledUids(localDate: String): Set<Int>
     fun recentBlockEvents(uid: Int, limit: Int): List<DataControlBlockEvent>
 }

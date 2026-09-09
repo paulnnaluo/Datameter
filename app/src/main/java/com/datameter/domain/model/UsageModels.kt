@@ -89,7 +89,6 @@ enum class UsageRowKind {
     Hotspot,
     System,
     RemovedApps,
-    Measured,
 }
 
 data class UsageRow(

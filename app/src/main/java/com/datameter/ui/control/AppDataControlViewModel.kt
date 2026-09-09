@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import com.datameter.core.DatameterServiceLocator
 import com.datameter.data.control.DataControlAppResolver
 import com.datameter.data.control.DataControlBlockEvent
@@ -11,10 +12,13 @@ import com.datameter.data.control.DataControlDailyUsage
 import com.datameter.data.control.DataControlRule
 import com.datameter.data.control.DataControlVpnController
 import com.datameter.data.control.DEFAULT_APP_LIMIT_BYTES
+import com.datameter.domain.model.NetworkFilter
+import com.datameter.domain.model.PeriodRangeResolver
 import com.datameter.domain.model.UsagePeriod
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -22,13 +26,16 @@ data class SelectedUsageApp(
     val uid: Int,
     val packageName: String,
     val label: String,
+    val selectedNetworkFilter: NetworkFilter,
     val selectedPeriod: UsagePeriod,
     val selectedPeriodBytes: Long,
+    val todayBytes: Long,
 )
 
 data class AppDataControlUiState(
     val app: SelectedUsageApp,
     val rule: DataControlRule,
+    val androidTodayBytes: Long,
     val todayUsage: DataControlDailyUsage?,
     val recentEvents: List<DataControlBlockEvent>,
 )
@@ -40,9 +47,18 @@ class AppDataControlViewModel(
     private val appContext = application.applicationContext
     private val repository = DatameterServiceLocator.dataControlRepository(appContext)
     private val appResolver = DataControlAppResolver(appContext)
+    private val networkUsageDataSource = DatameterServiceLocator.networkUsageDataSource(appContext)
+    private var androidTodayBytes = app.todayBytes
 
     private val _uiState = MutableStateFlow(loadState())
     val uiState: StateFlow<AppDataControlUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            androidTodayBytes = loadAndroidTodayBytes()
+            refresh()
+        }
+    }
 
     fun refresh() {
         _uiState.value = loadState()
@@ -94,9 +110,25 @@ class AppDataControlViewModel(
                 label = identity.displayLabel,
             ),
             rule = resolvedRule,
+            androidTodayBytes = androidTodayBytes,
             todayUsage = repository.readDailyUsage(app.uid, today),
             recentEvents = repository.recentBlockEvents(app.uid, RECENT_EVENT_LIMIT),
         )
+    }
+
+    private suspend fun loadAndroidTodayBytes(): Long {
+        if (app.selectedPeriod == UsagePeriod.Today) return app.selectedPeriodBytes
+
+        val range = PeriodRangeResolver.resolve(UsagePeriod.Today)
+        return runCatching {
+            networkUsageDataSource.query(app.selectedNetworkFilter, range)
+                .rows
+                .filter { row ->
+                    row.uid == app.uid ||
+                        row.id == "app:${app.packageName}"
+                }
+                .sumOf { it.totalBytes }
+        }.getOrDefault(0L)
     }
 
     companion object {

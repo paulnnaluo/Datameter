@@ -2,17 +2,17 @@
 
 Effective date: September 8, 2026
 
-Datameter is a mobile data usage app developed by Chíjìọ́kẹ́ Paul. This Privacy Policy explains how Datameter accesses, uses, stores, and shares data.
+Datameter is a mobile data usage app developed by Chíjìọ́kẹ́. This Privacy Policy explains how Datameter accesses, uses, stores, and shares data.
 
-Privacy contact: REPLACE_WITH_PUBLIC_SUPPORT_EMAIL
+Privacy contact: datameter.app@gmail.com
 
 ## Summary
 
-Datameter helps you understand mobile data, Wi-Fi data, hotspot use, per-app usage, network deductions, local usage alerts, and optional app data controls.
+Datameter helps you understand mobile data, Wi-Fi data, hotspot use, per-app usage, network deductions, local usage alerts, and app data controls.
 
 Datameter does not require an account. Datameter does not upload your data usage details to our servers.
 
-Datameter's optional Data Control feature uses Android VPN Service locally on your device to measure and block app network traffic according to rules you choose. Allowed traffic is forwarded to the destination requested by the app; it is not sent through Datameter servers.
+Data Control is a core user-enabled local app firewall in Datameter. It uses Android VPN Service locally on your device to measure and block app network traffic according to rules you choose. Allowed traffic is forwarded to the destination requested by the app; it is not sent through Datameter servers.
 
 ## Data Datameter Accesses
 
@@ -34,8 +34,8 @@ Datameter uses this data to:
 - Show your data usage dashboard.
 - Show where mobile data, Wi-Fi data, and hotspot usage went.
 - Compare what your phone measured with what your network deducted during a data audit.
-- Send optional local notifications for usage limits and unusual spikes.
-- Apply optional Data Control rules, including per-app mobile data blocks, Wi-Fi blocks, and automatic blocking after app data limits.
+- Send local notifications for usage limits and unusual spikes when you enable alerts.
+- Apply Data Control rules, including per-app mobile data blocks, Wi-Fi blocks, and automatic blocking after app data limits.
 - Show a persistent notification while Data Control is active.
 - Keep enabled local alerts working after your phone restarts.
 
@@ -47,12 +47,12 @@ Datameter does not upload your installed app list or app traffic details to Data
 Datameter uses Android permissions only for app functionality:
 
 - Usage Access / PACKAGE_USAGE_STATS: used to read Android network usage history and show mobile data, Wi-Fi data, hotspot usage, and per-app usage.
-- Android VPN Service: used only when you turn on Data Control, so Datameter can locally measure and block app network traffic on this phone.
+- Android VPN Service: used when you turn on Data Control, so Datameter can locally measure and block app network traffic on this phone.
 - INTERNET: used by Data Control to forward allowed app traffic to the destination requested by the app. Datameter does not use Internet access to upload your usage details to Datameter servers.
 - ACCESS_NETWORK_STATE: used by Data Control to detect whether the phone is currently on mobile data, Wi-Fi, or another network, and to keep the local VPN connected when networks change.
-- QUERY_ALL_PACKAGES: used by Data Control to identify installed apps, show app names/icons, and apply app-level data rules across the device.
+- QUERY_ALL_PACKAGES: used by Data Control to show the complete app list, identify installed apps, resolve app names/icons, map Android usage/VPN UIDs to apps, and apply app-level data rules across the device.
 - FOREGROUND_SERVICE: used to keep Data Control running with a visible persistent notification while the local VPN is active.
-- POST_NOTIFICATIONS: used only for optional local usage alerts.
+- POST_NOTIFICATIONS: used only for local usage alerts, Data Control block alerts, and the persistent Data Control status notification.
 - RECEIVE_BOOT_COMPLETED: used to reschedule enabled local usage alerts after the device restarts.
 
 Datameter does not request location, contacts, camera, microphone, SMS, or call logs.
@@ -105,5 +105,4 @@ We may update this Privacy Policy when Datameter changes. The latest version wil
 ## Contact
 
 For privacy questions, contact:
-
-REPLACE_WITH_PUBLIC_SUPPORT_EMAIL
+datameter.app@gmail.com

@@ -9,8 +9,6 @@ import com.datameter.domain.model.PeriodRangeResolver
 import com.datameter.domain.model.PeriodSummary
 import com.datameter.domain.model.PermissionStatus
 import com.datameter.domain.model.UsagePeriod
-import com.datameter.domain.model.UsageRow
-import com.datameter.domain.model.UsageRowKind
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -22,6 +20,11 @@ interface HomeUsageRepository {
     ): HomeViewState
 
     suspend fun loadPrimaryHomeState(
+        networkFilter: NetworkFilter,
+        period: UsagePeriod,
+    ): HomeViewState
+
+    suspend fun loadTotalHomeState(
         networkFilter: NetworkFilter,
         period: UsagePeriod,
     ): HomeViewState
@@ -73,10 +76,9 @@ class DefaultHomeUsageRepository(
         val selectedRange = PeriodRangeResolver.resolve(period, now)
         val periodElapsedMillis = (selectedRange.endMillis - selectedRange.startMillis).coerceAtLeast(0L)
         val selectedSnapshot = usageDataSource.query(networkFilter, selectedRange)
-        val usageRows = selectedSnapshot.rows.withMeasuredRemainder(
-            totalBytes = selectedSnapshot.total.totalBytes,
-            networkFilter = networkFilter,
-        )
+        val usageRows = selectedSnapshot.rows
+            .filter { it.totalBytes > 0L }
+            .sortedByDescending { it.totalBytes }
 
         return HomeViewState(
             selectedNetworkFilter = networkFilter,
@@ -108,6 +110,49 @@ class DefaultHomeUsageRepository(
         )
     }
 
+    override suspend fun loadTotalHomeState(
+        networkFilter: NetworkFilter,
+        period: UsagePeriod,
+    ): HomeViewState {
+        val now = clock()
+        if (!usageAccessManager.hasUsageAccess()) {
+            return HomeViewState.initial(networkFilter, period).copy(
+                isLoading = false,
+                permissionStatus = PermissionStatus.Missing,
+                dataFreshness = DataFreshness.PermissionMissing,
+            )
+        }
+
+        val selectedRange = PeriodRangeResolver.resolve(period, now)
+        val periodElapsedMillis = (selectedRange.endMillis - selectedRange.startMillis).coerceAtLeast(0L)
+        val totalBytes = usageDataSource.queryTotal(networkFilter, selectedRange).totalBytes
+
+        return HomeViewState(
+            selectedNetworkFilter = networkFilter,
+            selectedPeriod = period,
+            totalBytes = totalBytes,
+            periodSummaries = UsagePeriod.entries.map { summaryPeriod ->
+                PeriodSummary(
+                    period = summaryPeriod,
+                    totalBytes = if (summaryPeriod == period) totalBytes else 0L,
+                )
+            },
+            usageRows = emptyList(),
+            timelineBuckets = emptyList(),
+            primaryInsight = HomeInsightBuilder.build(
+                rows = emptyList(),
+                totalBytes = totalBytes,
+                networkFilter = networkFilter,
+                period = period,
+                periodElapsedMillis = periodElapsedMillis,
+            ),
+            permissionStatus = PermissionStatus.Granted,
+            dataFreshness = DataFreshness.Fresh(now),
+            periodElapsedMillis = periodElapsedMillis,
+            isLoading = true,
+        )
+    }
+
     override suspend fun loadPeriodSummaries(
         networkFilter: NetworkFilter,
         selectedPeriod: UsagePeriod,
@@ -126,44 +171,11 @@ class DefaultHomeUsageRepository(
                     val range = PeriodRangeResolver.resolve(summaryPeriod, now)
                     PeriodSummary(
                         period = summaryPeriod,
-                        totalBytes = usageDataSource.query(networkFilter, range).total.totalBytes,
+                        totalBytes = usageDataSource.queryTotal(networkFilter, range).totalBytes,
                     )
                 }
             }
         }.awaitAll()
     }
 
-    private fun List<UsageRow>.withMeasuredRemainder(
-        totalBytes: Long,
-        networkFilter: NetworkFilter,
-    ): List<UsageRow> {
-        val measuredTotal = totalBytes.coerceAtLeast(0L)
-        val positiveRows = filter { it.totalBytes > 0L }
-        val attributedBytes = positiveRows.sumOf { it.totalBytes }
-        val remainderBytes = measuredTotal - attributedBytes
-        if (remainderBytes <= 0L) return positiveRows.sortedByDescending { it.totalBytes }
-
-        return (positiveRows + UsageRow(
-            id = networkFilter.measuredRemainderId,
-            label = networkFilter.measuredRemainderLabel,
-            kind = UsageRowKind.Measured,
-            rxBytes = remainderBytes,
-            txBytes = 0L,
-            measuredExactly = false,
-        )).sortedByDescending { it.totalBytes }
-    }
-
-    private val NetworkFilter.measuredRemainderId: String
-        get() = when (this) {
-            NetworkFilter.Mobile -> "measured_mobile_data"
-            NetworkFilter.Wifi -> "measured_wifi_data"
-            NetworkFilter.MobileAndWifi -> "measured_data"
-        }
-
-    private val NetworkFilter.measuredRemainderLabel: String
-        get() = when (this) {
-            NetworkFilter.Mobile -> "Measured mobile data"
-            NetworkFilter.Wifi -> "Measured Wi-Fi data"
-            NetworkFilter.MobileAndWifi -> "Measured data"
-        }
 }

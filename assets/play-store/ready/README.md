@@ -21,6 +21,8 @@ Privacy policy: https://datameter.app/privacy
 - Privacy policy URL: `listing/privacy-policy-url.txt`
 - Release notes: `listing/release-notes.txt`
 - Permissions justification: `listing/permissions-justification.txt`
+- QUERY_ALL_PACKAGES declaration: `listing/query-all-packages-declaration-500.txt`
+- Foreground service declaration: `listing/foreground-service-special-use-declaration.txt`
 
 ## Release Artifact
 

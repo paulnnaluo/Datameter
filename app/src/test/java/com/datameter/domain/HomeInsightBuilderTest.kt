@@ -88,20 +88,9 @@ class HomeInsightBuilderTest {
     }
 
     @Test
-    fun `measured rows get a concrete total insight`() {
-        val rows = listOf(
-            UsageRow(
-                id = "measured_mobile_data",
-                label = "Measured mobile data",
-                kind = UsageRowKind.Measured,
-                rxBytes = 3_700_000_000L,
-                txBytes = 0L,
-                measuredExactly = false,
-            ),
-        )
-
+    fun `measured totals with unattributed app rows get a concrete total insight`() {
         val insight = HomeInsightBuilder.build(
-            rows = rows,
+            rows = emptyList(),
             totalBytes = 3_700_000_000L,
             networkFilter = NetworkFilter.Mobile,
             period = UsagePeriod.Today,

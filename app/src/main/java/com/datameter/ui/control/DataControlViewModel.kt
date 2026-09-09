@@ -22,6 +22,7 @@ data class DataControlUiState(
     val runtimeState: DataControlRuntimeState = DataControlRuntimeState(),
     val blockedAppsToday: Int = 0,
     val activeRuleCount: Int = 0,
+    val monitoredUids: Set<Int> = emptySet(),
 ) {
     val isRunning: Boolean
         get() = runtimeState.status == DataControlRunStatus.Active
@@ -102,6 +103,11 @@ class DataControlViewModel(application: Application) : AndroidViewModel(applicat
             runtimeState = visibleRuntimeState,
             blockedAppsToday = repository.blockedAppsCount(today),
             activeRuleCount = repository.activeRuleCount(),
+            monitoredUids = if (settings.enabled) {
+                repository.activeControlledUids(today)
+            } else {
+                emptySet()
+            },
         )
     }
 

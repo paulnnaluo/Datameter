@@ -28,10 +28,6 @@ object HomeInsightBuilder {
 
         val top = rows.firstOrNull { it.totalBytes > 0L }
         if (top != null) {
-            if (top.kind == UsageRowKind.Measured) {
-                return "Datameter measured ${ByteFormatter.format(top.totalBytes)} of your ${networkFilter.insightLabel} ${period.insightLabel}."
-            }
-
             return "${top.label} used ${ByteFormatter.percent(top.totalBytes, totalBytes)} of your ${networkFilter.insightLabel} ${period.insightLabel}."
         }
 

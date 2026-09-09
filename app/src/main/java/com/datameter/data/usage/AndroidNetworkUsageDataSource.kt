@@ -24,6 +24,19 @@ class AndroidNetworkUsageDataSource(
         .applicationContext
         .getSystemService(NetworkStatsManager::class.java)
 
+    override suspend fun queryTotal(filter: NetworkFilter, range: DateRange): ByteCount {
+        return withContext(Dispatchers.IO) {
+            when (filter) {
+                NetworkFilter.Mobile -> queryDeviceTotal(ConnectivityManager.TYPE_MOBILE, range)
+                NetworkFilter.Wifi -> queryDeviceTotal(ConnectivityManager.TYPE_WIFI, range)
+                NetworkFilter.MobileAndWifi -> {
+                    queryDeviceTotal(ConnectivityManager.TYPE_MOBILE, range) +
+                        queryDeviceTotal(ConnectivityManager.TYPE_WIFI, range)
+                }
+            }
+        }
+    }
+
     override suspend fun query(filter: NetworkFilter, range: DateRange): UsageSnapshot {
         return withContext(Dispatchers.IO) {
             val usageStatIdentitiesByUid = usageStatsPackageResolver.identitiesByUid(range)

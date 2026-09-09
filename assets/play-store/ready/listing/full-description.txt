@@ -9,8 +9,10 @@ See app-by-app usage breakdowns.
 Monitor hotspot and tethering consumption.
 Audit your network balance against measured usage.
 Get local usage alerts for daily limits and hourly spikes.
-Optionally block mobile data or Wi-Fi for individual apps.
-Optionally auto-block apps after they reach a data limit.
+Block mobile data or Wi-Fi for individual apps.
+Auto-block apps after they reach a data limit.
 Review usage movement across the day, week, or month.
 
-Datameter is built for clarity. It uses Android Usage Access and network statistics on your device to show data usage. Optional Data Control uses Android VPN Service locally to measure and block app traffic based on rules you choose. Datameter does not require an account and does not upload your usage details to a server.
+Data Control is a core user-enabled local app firewall in Datameter. It lets you pick any installed app, block mobile or Wi-Fi data for that app, and automatically block apps after they cross a data limit.
+
+Datameter is built for clarity. It uses Android Usage Access and network statistics on your device to show data usage. Data Control uses Android VPN Service locally to measure and block app traffic based on rules you choose. Allowed traffic is forwarded to the destination requested by the app, not through Datameter servers. Datameter does not require an account and does not upload your usage details or installed-app list to a server.

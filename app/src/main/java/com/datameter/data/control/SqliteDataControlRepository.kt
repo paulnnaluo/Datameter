@@ -198,6 +198,29 @@ class SqliteDataControlRepository(context: Context) : DataControlRepository {
         }
     }
 
+    override fun activeControlledUids(localDate: String): Set<Int> = synchronized(lock) {
+        helper.readableDatabase.query(
+            TABLE_APP_RULES,
+            arrayOf(COL_UID),
+            """
+            block_mobile_data = 1
+               OR block_wifi = 1
+               OR daily_limit_enabled = 1
+               OR auto_blocked_local_date = ?
+            """.trimIndent(),
+            arrayOf(localDate),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            buildSet {
+                while (cursor.moveToNext()) {
+                    add(cursor.getInt(COL_UID))
+                }
+            }
+        }
+    }
+
     override fun recentBlockEvents(uid: Int, limit: Int): List<DataControlBlockEvent> = synchronized(lock) {
         helper.readableDatabase.query(
             TABLE_BLOCK_EVENTS,

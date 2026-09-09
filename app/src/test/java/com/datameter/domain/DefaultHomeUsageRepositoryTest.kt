@@ -73,7 +73,7 @@ class DefaultHomeUsageRepositoryTest {
     }
 
     @Test
-    fun `measured total is shown even when app rows are missing`() = runTest {
+    fun `measured total stays visible even when app rows are missing`() = runTest {
         val repository = DefaultHomeUsageRepository(
             usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
             usageDataSource = FakeUsageDataSource(
@@ -88,14 +88,12 @@ class DefaultHomeUsageRepositoryTest {
 
         val state = repository.loadPrimaryHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
 
-        assertEquals(1, state.usageRows.size)
-        assertEquals("Measured mobile data", state.usageRows.single().label)
-        assertEquals(UsageRowKind.Measured, state.usageRows.single().kind)
-        assertEquals(3_700_000_000L, state.usageRows.single().totalBytes)
+        assertEquals(3_700_000_000L, state.totalBytes)
+        assertTrue(state.usageRows.isEmpty())
     }
 
     @Test
-    fun `unassigned measured remainder is added to partial app rows`() = runTest {
+    fun `partial app rows stay app only while total remains accurate`() = runTest {
         val repository = DefaultHomeUsageRepository(
             usageAccessManager = FakeUsageAccessChecker(hasAccess = true),
             usageDataSource = FakeUsageDataSource(
@@ -118,10 +116,10 @@ class DefaultHomeUsageRepositoryTest {
 
         val state = repository.loadPrimaryHomeState(NetworkFilter.Mobile, UsagePeriod.Today)
 
-        assertEquals(2, state.usageRows.size)
-        assertEquals(1_000L, state.usageRows.sumOf { it.totalBytes })
-        assertEquals("Measured mobile data", state.usageRows.last().label)
-        assertEquals(300L, state.usageRows.last().totalBytes)
+        assertEquals(1_000L, state.totalBytes)
+        assertEquals(1, state.usageRows.size)
+        assertEquals("YouTube", state.usageRows.single().label)
+        assertEquals(700L, state.usageRows.single().totalBytes)
     }
 
     @Test

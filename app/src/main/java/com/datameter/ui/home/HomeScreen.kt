@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import com.datameter.domain.ByteFormatter
 import com.datameter.domain.model.DataFreshness
 import com.datameter.domain.model.HomeViewState
+import com.datameter.domain.model.NetworkFilter
 import com.datameter.domain.model.PermissionStatus
 import com.datameter.domain.model.PeriodSummary
 import com.datameter.domain.model.TimelineBucket
@@ -133,6 +134,9 @@ fun HomeScreen(
                 rows = state.usageRows,
                 period = state.selectedPeriod,
                 periodElapsedMillis = state.periodElapsedMillis,
+                totalBytes = state.totalBytes,
+                networkFilter = state.selectedNetworkFilter,
+                dataControlState = dataControlState,
                 onUsageRowSelected = onUsageRowSelected,
             )
         }
@@ -460,6 +464,9 @@ private fun UsageBreakdownSection(
     rows: List<UsageRow>,
     period: UsagePeriod,
     periodElapsedMillis: Long,
+    totalBytes: Long,
+    networkFilter: NetworkFilter,
+    dataControlState: DataControlUiState,
     onUsageRowSelected: (UsageRow) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -473,11 +480,14 @@ private fun UsageBreakdownSection(
                 emptyBreakdownMessage(
                     period = period,
                     periodElapsedMillis = periodElapsedMillis,
+                    totalBytes = totalBytes,
+                    networkFilter = networkFilter,
                 ),
             )
         } else {
             GroupedUsageList(
                 rows = rows,
+                dataControlState = dataControlState,
                 onUsageRowSelected = onUsageRowSelected,
             )
         }
@@ -590,6 +600,7 @@ private fun DataControlHomeSection(
 @Composable
 private fun GroupedUsageList(
     rows: List<UsageRow>,
+    dataControlState: DataControlUiState,
     onUsageRowSelected: (UsageRow) -> Unit,
 ) {
     val maxBytes = rows.maxOfOrNull { it.totalBytes }.coerceAtLeastOne()
@@ -603,6 +614,7 @@ private fun GroupedUsageList(
                 row = row,
                 maxBytes = maxBytes,
                 shape = groupedItemShape(index, rows.size),
+                monitored = row.isMonitoredBy(dataControlState),
                 onClick = { onUsageRowSelected(row) },
             )
         }
@@ -614,6 +626,7 @@ private fun UsageRowItem(
     row: UsageRow,
     maxBytes: Long,
     shape: RoundedCornerShape,
+    monitored: Boolean,
     onClick: () -> Unit,
 ) {
     val color = usageKindColor(row.kind)
@@ -649,6 +662,10 @@ private fun UsageRowItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (monitored) {
+                    MonitoringBadge()
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(
                     text = ByteFormatter.format(row.totalBytes),
                     style = MaterialTheme.typography.titleSmall,
@@ -660,6 +677,22 @@ private fun UsageRowItem(
                 color = color,
             )
         }
+    }
+}
+
+@Composable
+private fun MonitoringBadge() {
+    Surface(
+        shape = RoundedCornerShape(100.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Text(
+            text = "Monitoring",
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
     }
 }
 
@@ -886,11 +919,21 @@ private fun groupedItemShape(index: Int, totalItems: Int): RoundedCornerShape {
 private fun emptyBreakdownMessage(
     period: UsagePeriod,
     periodElapsedMillis: Long,
+    totalBytes: Long,
+    networkFilter: NetworkFilter,
 ): String {
-    return if (period.hasJustStarted(periodElapsedMillis)) {
-        "${period.label} just started. App breakdown will appear after a little usage."
-    } else {
-        "App breakdown will appear once Datameter has enough usage for this period."
+    return when {
+        totalBytes > 0L -> {
+            "Datameter measured ${ByteFormatter.format(totalBytes)} of ${networkFilter.insightLabel}. App details are still updating."
+        }
+
+        period.hasJustStarted(periodElapsedMillis) -> {
+            "${period.label} just started. App breakdown will appear after usage begins."
+        }
+
+        else -> {
+            "App breakdown will appear once Datameter has usage for this period."
+        }
     }
 }
 
@@ -909,6 +952,11 @@ private fun UsagePeriod.hasJustStarted(elapsedMillis: Long): Boolean {
     return elapsedMillis in 0L until EARLY_PERIOD_WINDOW_MILLIS
 }
 
+private fun UsageRow.isMonitoredBy(state: DataControlUiState): Boolean {
+    if (!state.settings.enabled || kind != UsageRowKind.App || uid == null) return false
+    return state.settings.globalAutoBlockEnabled || state.monitoredUids.contains(uid)
+}
+
 @Composable
 private fun usageKindColor(kind: UsageRowKind): Color {
     return when (kind) {
@@ -916,7 +964,6 @@ private fun usageKindColor(kind: UsageRowKind): Color {
         UsageRowKind.App -> MaterialTheme.colorScheme.primary
         UsageRowKind.System -> MaterialTheme.colorScheme.secondary
         UsageRowKind.RemovedApps -> MaterialTheme.colorScheme.outline
-        UsageRowKind.Measured -> MaterialTheme.colorScheme.primary
     }
 }
 
@@ -979,7 +1026,6 @@ private fun usageVector(kind: UsageRowKind): ImageVector {
         UsageRowKind.Hotspot -> Icons.Filled.WifiTethering
         UsageRowKind.System -> Icons.Filled.Settings
         UsageRowKind.RemovedApps -> Icons.Filled.Delete
-        UsageRowKind.Measured -> Icons.Filled.Apps
         UsageRowKind.App -> Icons.Filled.Apps
     }
 }
